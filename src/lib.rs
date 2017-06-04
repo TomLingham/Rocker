@@ -36,30 +36,50 @@ pub struct DockerResult {
 pub struct DockerBuild<'a> {
     context: &'a str,
     file: &'a str,
+    tag: Option<&'a str>,
 }
 impl<'a> DockerBuild<'a> {
     pub fn new() -> DockerBuild<'a> {
         DockerBuild {
             context: ".",
             file: "Dockerfile",
+            tag: None,
         }
     }
     pub fn context(&self, context: &'a str) -> DockerBuild<'a> {
         DockerBuild {
             context: context,
             file: self.file,
+            tag: self.tag,
         }
     }
     pub fn file(&self, file: &'a str) -> DockerBuild<'a> {
         DockerBuild {
             context: self.context,
             file: file,
+            tag: self.tag,
+        }
+    }
+    pub fn tag(&self, tag: &'a str) -> DockerBuild<'a> {
+        DockerBuild {
+            context: self.context,
+            file: self.file,
+            tag: Some(tag),
         }
     }
 }
 impl<'a> DockerCommand<'a> for DockerBuild<'a> {
     fn args(&self) -> Vec<&str> {
-        vec!["build", "-f", &self.file, &self.context]
+        let mut args = vec!["build", "-f", self.file];
+
+        match self.tag {
+            Some(tag) => { args.push("-t"); args.push(tag) },
+            None => (),
+        }
+
+        args.push(self.context);
+
+        args
     }
 
     fn init(&'a self) -> DockerResult {
@@ -96,7 +116,7 @@ impl<'a> Docker<'a> {
             let next = line.unwrap();
             output.push_str("\n");
             output.push_str(next.trim());
-            println!("| {}", next);
+            println!("|  {}", next);
         }
 
         let exit_status = process.wait()?.code().unwrap_or(1);

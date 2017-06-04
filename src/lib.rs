@@ -1,3 +1,5 @@
+#![feature(conservative_impl_trait)]
+
 use std::error::Error;
 use std::io::{ self, Read, Write, BufRead, BufReader };
 use std::process::{Command, Output, Stdio};
@@ -8,10 +10,8 @@ mod tests;
 
 
 pub trait DockerCommand<'a> {
-    fn init(&'a self) -> DockerResult;
     fn args(&self) -> Vec<&str>;
 }
-
 
 
 #[derive(Debug)]
@@ -20,18 +20,35 @@ impl<'a> Rocker {
     pub fn build() -> DockerBuild<'a> {
         DockerBuild::new()
     }
+
+    pub fn create(image: &str) -> DockerCreate {
+        DockerCreate::new(image)
+    }
 }
 
 
 
 #[derive(Debug)]
-pub struct DockerResult {
+pub struct DockerProcessResult {
     pub output: String,
-    pub exit_status: i32
+    pub exit_status: i32,
+}
+#[derive(Debug)]
+pub struct DockerBuildResult<'a> {
+    pub process: DockerProcessResult,
+    pub tag: Option<&'a str>,
+}
+#[derive(Debug)]
+pub struct DockerCreateResult {
+    pub process: DockerProcessResult,
+    pub container_id: String,
 }
 
 
 
+//--------------//
+// Docker Build //
+//--------------//
 #[derive(Debug)]
 pub struct DockerBuild<'a> {
     context: &'a str,
@@ -67,6 +84,20 @@ impl<'a> DockerBuild<'a> {
             tag: Some(tag),
         }
     }
+    pub fn init(&'a self) -> DockerBuildResult {
+        let docker = Docker {
+            args: self.args(),
+        };
+
+        let docker_result = docker
+            .init()
+            .unwrap();
+
+        DockerBuildResult {
+            process: docker_result,
+            tag: self.tag,
+        }
+    }
 }
 impl<'a> DockerCommand<'a> for DockerBuild<'a> {
     fn args(&self) -> Vec<&str> {
@@ -81,13 +112,40 @@ impl<'a> DockerCommand<'a> for DockerBuild<'a> {
 
         args
     }
+}
 
-    fn init(&'a self) -> DockerResult {
-        let args = self.args();
+//---------------//
+// Docker Create //
+//---------------//
+pub struct DockerCreate {
+    image: String,
+}
+impl DockerCreate {
+    pub fn new(image: &str) -> DockerCreate {
+        DockerCreate {
+            image: image.to_owned(),
+        }
+    }
+    pub fn init(&self) -> DockerCreateResult {
         let docker = Docker {
-            args: args,
+            args: self.args(),
         };
-        docker.init().unwrap()
+
+        let docker_result = docker
+            .init()
+            .unwrap();
+
+        let container_id = docker_result.output.trim().to_owned();
+
+        DockerCreateResult {
+            process: docker_result,
+            container_id: container_id,
+        }
+    }
+}
+impl<'a> DockerCommand<'a> for DockerCreate {
+    fn args(&self) -> Vec<&str> {
+        vec!["create", self.image.as_str()]
     }
 }
 
@@ -95,10 +153,10 @@ impl<'a> DockerCommand<'a> for DockerBuild<'a> {
 
 #[derive(Debug)]
 pub struct Docker<'a> {
-    args: Vec<&'a str>
+    args: Vec<&'a str>,
 }
 impl<'a> Docker<'a> {
-    pub fn init(&self) -> Result<DockerResult, io::Error> {
+    pub fn init(&self) -> Result<DockerProcessResult, io::Error> {
         println!("Running command: docker {}", &self.args.join(" "));
         let mut process = Command::new("docker")
             .stdout(Stdio::piped())
@@ -120,13 +178,12 @@ impl<'a> Docker<'a> {
         }
 
         let exit_status = process.wait()?.code().unwrap_or(1);
+        let process_result = DockerProcessResult {
+            output: output,
+            exit_status: exit_status,
+        };
 
-        Ok(
-            DockerResult {
-                output: output,
-                exit_status: exit_status,
-            }
-        )
+        Ok(process_result)
     }
 }
 

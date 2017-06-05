@@ -10,7 +10,7 @@ mod tests;
 
 
 pub trait DockerCommand<'a> {
-    fn args(&self) -> Vec<&str>;
+    fn args(&self) -> Vec<String>;
 }
 
 
@@ -23,6 +23,10 @@ impl<'a> Rocker {
 
     pub fn create(image: &str) -> DockerCreate {
         DockerCreate::new(image)
+    }
+
+    pub fn copy() -> DockerCopy {
+        DockerCopy::new()
     }
 }
 
@@ -100,15 +104,15 @@ impl<'a> DockerBuild<'a> {
     }
 }
 impl<'a> DockerCommand<'a> for DockerBuild<'a> {
-    fn args(&self) -> Vec<&str> {
-        let mut args = vec!["build", "-f", self.file];
+    fn args(&self) -> Vec<String> {
+        let mut args = vec!["build".to_owned(), "-f".to_owned(), self.file.to_owned()];
 
         match self.tag {
-            Some(tag) => { args.push("-t"); args.push(tag) },
+            Some(tag) => { args.push("-t".to_owned()); args.push(tag.to_owned()) },
             None => (),
         }
 
-        args.push(self.context);
+        args.push(self.context.to_owned());
 
         args
     }
@@ -144,18 +148,66 @@ impl DockerCreate {
     }
 }
 impl<'a> DockerCommand<'a> for DockerCreate {
-    fn args(&self) -> Vec<&str> {
-        vec!["create", self.image.as_str()]
+    fn args(&self) -> Vec<String> {
+        vec!["create".to_owned(), self.image.clone()]
     }
 }
 
 
 
-#[derive(Debug)]
-pub struct Docker<'a> {
-    args: Vec<&'a str>,
+//-------------//
+// Docker Copy //
+//-------------//
+pub struct DockerCopy {
+    from: Option<String>,
+    to: Option<String>,
 }
-impl<'a> Docker<'a> {
+impl DockerCopy {
+    pub fn new() -> DockerCopy {
+        DockerCopy {
+            from: None,
+            to: None,
+        }
+    }
+
+    pub fn from_container(&mut self, container_id: &str, path: &str) -> &mut Self {
+        self.from = Some(format!("{}:{}", container_id, path));
+        self
+    }
+
+    pub fn to_host(&mut self, path: &str) -> &mut Self {
+        self.to = Some(path.to_owned());
+        self
+    }
+
+    pub fn init(&self) -> DockerProcessResult {
+        let docker = Docker {
+            args: self.args(),
+        };
+
+        docker.init().unwrap()
+    }
+}
+impl<'a> DockerCommand<'a> for DockerCopy {
+    fn args(&self) -> Vec<String> {
+        let from = match self.from {
+            Some(ref f) => f,
+            None => "",
+        };
+        let to = match self.to {
+            Some(ref t) => t,
+            None => "",
+        };
+        vec!["cp".to_owned(), from.to_owned(), to.to_owned()]
+    }
+}
+
+
+#[derive(Debug)]
+pub struct Docker {
+    args: Vec<String>,
+}
+impl Docker {
     pub fn init(&self) -> Result<DockerProcessResult, io::Error> {
         println!("Running command: docker {}", &self.args.join(" "));
         let mut process = Command::new("docker")
